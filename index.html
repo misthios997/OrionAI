@@ -501,6 +501,7 @@
     </button>
     <div class="topbar-spacer"></div>
     <div class="topbar-right">
+      <span id="apiStatus" style="font-size:11px;color:var(--muted);padding:0 8px;white-space:nowrap;overflow:hidden;max-width:140px;text-overflow:ellipsis"></span>
       <button class="icon-btn mobile-new-btn" onclick="newChat()" title="Chat Baru">✎</button>
       <button class="icon-btn" onclick="clearAllHistory()" title="Hapus Semua History">🗑</button>
     </div>
@@ -963,9 +964,10 @@ window.sendMessage = async function() {
     });
 
     if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      const errMsg = errData?.error?.message || errData?.message || `HTTP ${response.status}: ${response.statusText}`;
-      throw new Error(errMsg);
+      let errText = '';
+      try { const errData = await response.json(); errText = errData?.error?.message || errData?.message || JSON.stringify(errData); }
+      catch(je) { errText = await response.text().catch(() => ''); }
+      throw new Error(`[${response.status}] ${errText || response.statusText}`);
     }
 
     const data = await response.json();
@@ -1003,11 +1005,11 @@ window.sendMessage = async function() {
 };
 
 // ── TOAST ──
-window.showToast = function(msg) {
+window.showToast = function(msg, duration) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  setTimeout(() => t.classList.remove('show'), duration || 2500);
 };
 
 // ── LOGOUT ──
@@ -1071,21 +1073,25 @@ onAuthStateChanged(auth, async user => {
 });
 
 async function testApiKey() {
+  const statusEl = document.getElementById('apiStatus');
   try {
     const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
       headers: { 'Authorization': 'Bearer ' + OPENROUTER_KEY }
     });
     const data = await res.json();
     if (data.error) {
-      showToast('⚠️ OpenRouter API key tidak valid: ' + (data.error.message || data.error));
-      console.error('API Key Error:', data.error);
+      const msg = data.error.message || JSON.stringify(data.error);
+      if (statusEl) { statusEl.textContent = '🔴 Key Error: ' + msg; statusEl.style.color = '#ff6b6b'; }
+      showToast('⚠️ API Key Error: ' + msg, 5000);
     } else {
-      const label = data.data?.label || 'OK';
-      const usage = data.data?.usage ? ` | Kredit: $${(data.data.usage/100).toFixed(4)}` : '';
-      console.log('OpenRouter key valid:', label + usage);
+      const limit = data.data?.limit != null ? `$${(data.data.limit/100).toFixed(2)}` : '?';
+      const usage = data.data?.usage != null ? `$${(data.data.usage/100).toFixed(4)}` : '?';
+      const isUnlimited = data.data?.is_free_tier;
+      const info = isUnlimited ? 'Free tier ✓' : `Sisa: ${limit} | Terpakai: ${usage}`;
+      if (statusEl) { statusEl.textContent = '🟢 ' + info; statusEl.style.color = '#4cffb3'; }
     }
   } catch(e) {
-    console.warn('Could not verify API key:', e.message);
+    if (statusEl) { statusEl.textContent = '🟡 Tidak bisa cek API'; statusEl.style.color = '#ffd700'; }
   }
 }
 
